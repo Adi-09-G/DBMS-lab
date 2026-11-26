@@ -1,0 +1,197 @@
+
+DROP DATABASE IF EXISTS company;
+
+CREATE DATABASE company;
+USE company;
+
+-- 1. CREATE TABLES
+
+CREATE TABLE IF NOT EXISTS Employee (
+    ssn VARCHAR(35) PRIMARY KEY,
+    name VARCHAR(35) NOT NULL,
+    address VARCHAR(255) NOT NULL,
+    sex VARCHAR(7) NOT NULL,
+    salary INT NOT NULL,
+    super_ssn VARCHAR(35),
+    d_no INT,
+    FOREIGN KEY (super_ssn) REFERENCES Employee(ssn)
+    ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS Department (
+    d_no INT PRIMARY KEY,
+    dname VARCHAR(100) NOT NULL,
+    mgr_ssn VARCHAR(35),
+    mgr_start_date DATE,
+    FOREIGN KEY (mgr_ssn) REFERENCES Employee(ssn)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS DLocation (
+    d_no INT NOT NULL,
+    d_loc VARCHAR(100) NOT NULL,
+    FOREIGN KEY (d_no) REFERENCES Department(d_no)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Project (
+    p_no INT PRIMARY KEY,
+    p_name VARCHAR(25) NOT NULL,
+    p_loc VARCHAR(25) NOT NULL,
+    d_no INT NOT NULL,
+    FOREIGN KEY (d_no) REFERENCES Department(d_no)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS WorksOn (
+    ssn VARCHAR(35) NOT NULL,
+    p_no INT NOT NULL,
+    hours INT NOT NULL DEFAULT 0,
+    FOREIGN KEY (ssn) REFERENCES Employee(ssn)
+    ON DELETE CASCADE,
+    FOREIGN KEY (p_no) REFERENCES Project(p_no)
+    ON DELETE CASCADE
+);
+
+-- 2. INSERT RECORDS
+
+INSERT INTO Employee VALUES
+('01NB235', 'Chandan_Krishna', 'Siddartha Nagar, Mysuru', 'Male', 1500000, '01NB235', 5),
+('01NB354', 'Employee_2', 'Lakshmipuram, Mysuru', 'Female', 1200000, '01NB235', 2),
+('02NB254', 'Employee_3', 'Pune, Maharashtra', 'Male', 1000000, '01NB235', 4),
+('03NB653', 'Employee_4', 'Hyderabad, Telangana', 'Male', 2500000, '01NB354', 5),
+('04NB234', 'Employee_5', 'JP Nagar, Bengaluru', 'Female', 1700000, '01NB354', 1);
+
+INSERT INTO Department VALUES
+(001, 'Human Resources', '01NB235', '2020-10-21'),
+(002, 'Quality Assesment', '03NB653', '2020-10-19'),
+(003, 'System assesment', '04NB234', '2020-10-27'),
+(005, 'Production', '02NB254', '2020-08-16'),
+(004, 'Accounts', '01NB354', '2020-09-04');
+
+INSERT INTO DLocation VALUES
+(001, 'Jaynagar, Bengaluru'),
+(002, 'Vijaynagar, Mysuru'),
+(003, 'Chennai, Tamil Nadu'),
+(004, 'Mumbai, Maharashtra'),
+(005, 'Kuvempunagar, Mysuru');
+
+INSERT INTO Project VALUES
+(241563, 'System Testing', 'Mumbai, Maharashtra', 004),
+(532678, 'IOT', 'JP Nagar, Bengaluru', 001),
+(453723, 'Product Optimization', 'Hyderabad, Telangana', 005),
+(278345, 'Yeild Increase', 'Kuvempunagar, Mysuru', 005),
+(426784, 'Product Refinement', 'Saraswatipuram, Mysuru', 002);
+
+INSERT INTO WorksOn VALUES
+('01NB235', 278345, 5),
+('01NB354', 426784, 6),
+('04NB234', 532678, 3),
+('02NB254', 241563, 3),
+('03NB653', 453723, 6);
+
+-- 3. DISPLAY ALL TABLES
+
+SELECT * FROM Employee;
+SELECT * FROM Department;
+SELECT * FROM DLocation;
+SELECT * FROM Project;
+SELECT * FROM WorksOn;
+
+-- 4. QUERIES
+
+-- Query 1: List project numbers and names involving employees
+-- whose last name is Krishna.
+
+SELECT p_no, p_name, name
+FROM Project p, Employee e
+WHERE p.d_no = e.d_no
+AND e.name LIKE '%Krishna';
+
+-- Query 2: Display old and new salaries of employees
+-- working on the IOT project after a 10% raise.
+
+SELECT w.ssn, name,
+       salary AS old_salary,
+       salary * 1.1 AS new_salary
+FROM WorksOn w
+JOIN Employee e ON w.ssn = e.ssn
+WHERE w.p_no = (
+    SELECT p_no
+    FROM Project
+    WHERE p_name = 'IOT'
+);
+
+-- Query 3: Find sum, maximum, minimum and average salary
+-- of employees in Accounts department.
+
+SELECT SUM(salary) AS sal_sum,
+       MAX(salary) AS sal_max,
+       MIN(salary) AS sal_min,
+       AVG(salary) AS sal_avg
+FROM Employee e
+JOIN Department d ON e.d_no = d.d_no
+WHERE d.dname = 'Accounts';
+
+-- Query 4: Retrieve employees who work on all projects
+-- controlled by department number 1 using NOT EXISTS.
+
+SELECT Employee.ssn, name, d_no
+FROM Employee
+WHERE NOT EXISTS (
+    SELECT p_no
+    FROM Project p
+    WHERE p.d_no = 1
+    AND p_no NOT IN (
+        SELECT p_no
+        FROM WorksOn w
+        WHERE w.ssn = Employee.ssn
+    )
+);
+
+-- Query 5: Find departments having more than one employee
+-- earning more than Rs. 6,00,000.
+
+SELECT d.d_no, COUNT(*)
+FROM Department d
+JOIN Employee e ON e.d_no = d.d_no
+WHERE salary > 600000
+GROUP BY d.d_no
+HAVING COUNT(*) > 1;
+
+-- 5. CREATE VIEW
+
+CREATE VIEW emp_details AS
+SELECT name, dname, d_loc
+FROM Employee e
+JOIN Department d ON e.d_no = d.d_no
+JOIN DLocation dl ON d.d_no = dl.d_no;
+
+-- Display view
+
+SELECT * FROM emp_details;
+
+-- 6. CREATE TRIGGER
+
+DELIMITER //
+
+CREATE TRIGGER PreventDelete
+BEFORE DELETE ON Project
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT *
+        FROM WorksOn
+        WHERE p_no = OLD.p_no
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'This project has an employee assigned';
+    END IF;
+END //
+
+DELIMITER ;
+
+-- Test trigger
+
+DELETE FROM Project
+WHERE p_no = 241563;
